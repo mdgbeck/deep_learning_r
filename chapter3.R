@@ -143,3 +143,87 @@ prediction <- model %>% predict(x_test)
 dim(prediction)
 sum(prediction[1, ])
 round(prediction[1, ], 2)
+
+
+
+# section 3.6 regression example
+library(keras)
+library(tidyverse)
+
+dataset <- dataset_boston_housing()
+c(c(train_data, train_targets), c(test_data, test_targets)) %<-% dataset
+
+data_mean <- apply(train_data, 2, mean)
+data_sd <- apply(train_data, 2, sd)
+train_data <- scale(train_data, center = data_mean, scale = data_sd)
+test_data <- scale(test_data, center = data_mean, scale = data_sd)
+
+build_model <- function(){
+  model <- keras_model_sequential() %>% 
+    layer_dense(units = 64, activation = "relu",
+                input_shape = dim(train_data)[[2]]) %>% 
+    layer_dense(units = 64, activation = "relu") %>% 
+    layer_dense(units = 1)
+  
+  model %>% compile(
+    optimizer = "rmsprop",
+    loss = "mse",
+    metrics = c("mae")
+  )
+}
+
+# k fold validation
+k <- 4
+indices <- sample(1:nrow(train_data))
+folds <- cut(1:length(indices), breaks = k, labels = FALSE)
+
+num_epochs <- 15
+all_mae_histories <- NULL
+all_scores <- c()
+for(i in 1:k){
+  cat("processing fold #", i, "\n")
+  
+  val_indices <- which(folds == i, arr.ind = TRUE)
+  val_data <- train_data[val_indices, ]
+  val_targets <- train_targets[val_indices]
+  
+  partial_train_data <- train_data[-val_indices, ]
+  partial_train_targets <- train_targets[-val_indices]
+  
+  model <- build_model()
+
+  history <- model %>% fit(
+    partial_train_data,
+    partial_train_targets,
+    validation_data = list(val_data, val_targets),
+    epochs = num_epochs,
+    batch_size = 1
+  )
+  
+  mae_history <- history$metrics$val_mean_absolute_error
+  all_mae_histories <- rbind(all_mae_histories, mae_history)
+
+  results <- model %>% evaluate(val_data, val_targets, verbose = 0)
+  all_scores <- c(all_scores, results$mean_absolute_error)
+  
+}
+
+average_mae_history <- data_frame(
+  epoch = seq(1:ncol(all_mae_histories)),
+  validation_mae = apply(all_mae_histories, 2, mean)
+)
+
+ggplot(average_mae_history, aes(epoch, validation_mae)) +
+  geom_line() +
+  geom_smooth()
+
+
+# train final model
+model <- build_model()
+model %>% fit(train_data, 
+              train_targets,
+              epochs = 80,
+              batch_size = 16
+          )
+result <- model %>% evaluate(test_data, test_targets)
+result
