@@ -139,7 +139,6 @@ plot(history)
 results <- model %>% evaluate(x_test, one_hot_test_labels)
 results
 
-
 prediction <- model %>% predict(x_test)
 dim(prediction)
 sum(prediction[1, ])
